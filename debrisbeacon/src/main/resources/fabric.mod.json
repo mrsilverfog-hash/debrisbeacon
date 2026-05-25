@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "debrisbeacon",
+  "version": "${version}",
+  "name": "DebrisBeacon",
+  "description": "Affiche un rayon pointé vers vous depuis chaque débris antique dans un rayon de 32 blocs.",
+  "authors": ["Tropimon"],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "net.tropimon.debrisbeacon.DebrisBeaconClient"
+    ]
+  },
+  "mixins": ["debrisbeacon.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.1"
+  }
+}
