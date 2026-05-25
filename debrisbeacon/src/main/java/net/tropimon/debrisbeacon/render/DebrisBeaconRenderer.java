@@ -22,7 +22,7 @@ public class DebrisBeaconRenderer {
     private static final float A = 1.0f;
 
     // Très fin : 0.02 bloc de rayon
-    private static final float BEAM_RADIUS = 0.02f;
+    private static final float BEAM_RADIUS = 0.05f;
     private static final int BEAM_SIDES = 4;
 
     private static final int SEARCH_RADIUS = 64;
@@ -66,7 +66,7 @@ public class DebrisBeaconRenderer {
         RenderSystem.defaultBlendFunc();
         RenderSystem.depthMask(false);
         RenderSystem.disableCull();
-        RenderSystem.enableDepthTest();
+        RenderSystem.disableDepthTest();
 
         Tessellator tessellator = Tessellator.getInstance();
 
@@ -78,6 +78,7 @@ public class DebrisBeaconRenderer {
             drawBeam(tessellator, viewMatrix, camPos, debrisCenter, direction, distance, angle);
         }
 
+        RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
