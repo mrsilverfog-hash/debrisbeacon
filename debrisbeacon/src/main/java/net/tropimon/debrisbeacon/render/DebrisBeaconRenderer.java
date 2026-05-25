@@ -19,9 +19,11 @@ public class DebrisBeaconRenderer {
     private static final float R = 1.0f;
     private static final float G = 0.65f;
     private static final float B = 0.0f;
+    private static final float A = 1.0f;
 
-    // Taille du point lumineux (billboard)
-    private static final float POINT_SIZE = 0.15f;
+    // Très fin : 0.02 bloc de rayon
+    private static final float BEAM_RADIUS = 0.02f;
+    private static final int BEAM_SIDES = 4;
 
     private static final int SEARCH_RADIUS = 64;
     private static final int SCAN_INTERVAL = 100;
@@ -52,12 +54,10 @@ public class DebrisBeaconRenderer {
 
         Camera camera = context.camera();
         Vec3d camPos = camera.getPos();
+        Vec3d playerEyes = client.player.getEyePos();
 
-        // Vecteurs de la caméra pour le billboard (toujours face au joueur)
-        org.joml.Vector3f camRight = new org.joml.Vector3f();
-        org.joml.Vector3f camUp = new org.joml.Vector3f();
-        context.matrixStack().peek().getPositionMatrix().positiveX(camRight);
-        context.matrixStack().peek().getPositionMatrix().positiveY(camUp);
+        float tickDelta = context.tickCounter().getTickDelta(true);
+        float angle = ((currentTick % 360) + tickDelta) * 3.0f;
 
         Matrix4f viewMatrix = context.matrixStack().peek().getPositionMatrix();
 
@@ -69,65 +69,70 @@ public class DebrisBeaconRenderer {
         RenderSystem.enableDepthTest();
 
         Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
         for (BlockPos pos : cachedBlocks) {
-            float x = (float)(pos.getX() + 0.5 - camPos.x);
-            float y = (float)(pos.getY() + 0.5 - camPos.y);
-            float z = (float)(pos.getZ() + 0.5 - camPos.z);
+            Vec3d debrisCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            Vec3d direction = playerEyes.subtract(debrisCenter).normalize();
+            double distance = debrisCenter.distanceTo(playerEyes); // max 3 blocs de long
 
-            float s = POINT_SIZE;
-
-            // Billboard : carré qui fait toujours face à la caméra
-            // Coin bas-gauche
-            float x0 = x - camRight.x * s - camUp.x * s;
-            float y0 = y - camRight.y * s - camUp.y * s;
-            float z0 = z - camRight.z * s - camUp.z * s;
-            // Coin bas-droit
-            float x1 = x + camRight.x * s - camUp.x * s;
-            float y1 = y + camRight.y * s - camUp.y * s;
-            float z1 = z + camRight.z * s - camUp.z * s;
-            // Coin haut-droit
-            float x2 = x + camRight.x * s + camUp.x * s;
-            float y2 = y + camRight.y * s + camUp.y * s;
-            float z2 = z + camRight.z * s + camUp.z * s;
-            // Coin haut-gauche
-            float x3 = x - camRight.x * s + camUp.x * s;
-            float y3 = y - camRight.y * s + camUp.y * s;
-            float z3 = z - camRight.z * s + camUp.z * s;
-
-            // Centre très lumineux, bords transparents
-            buffer.vertex(viewMatrix, x0, y0, z0).color(R, G, B, 0.0f);
-            buffer.vertex(viewMatrix, x1, y1, z1).color(R, G, B, 0.0f);
-            buffer.vertex(viewMatrix, x2, y2, z2).color(R, G, B, 0.0f);
-            buffer.vertex(viewMatrix, x3, y3, z3).color(R, G, B, 0.0f);
-
-            // Carré intérieur lumineux
-            float si = s * 0.3f;
-            float xi0 = x - camRight.x * si - camUp.x * si;
-            float yi0 = y - camRight.y * si - camUp.y * si;
-            float zi0 = z - camRight.z * si - camUp.z * si;
-            float xi1 = x + camRight.x * si - camUp.x * si;
-            float yi1 = y + camRight.y * si - camUp.y * si;
-            float zi1 = z + camRight.z * si - camUp.z * si;
-            float xi2 = x + camRight.x * si + camUp.x * si;
-            float yi2 = y + camRight.y * si + camUp.y * si;
-            float zi2 = z + camRight.z * si + camUp.z * si;
-            float xi3 = x - camRight.x * si + camUp.x * si;
-            float yi3 = y - camRight.y * si + camUp.y * si;
-            float zi3 = z - camRight.z * si + camUp.z * si;
-
-            buffer.vertex(viewMatrix, xi0, yi0, zi0).color(R, G, B, 1.0f);
-            buffer.vertex(viewMatrix, xi1, yi1, zi1).color(R, G, B, 1.0f);
-            buffer.vertex(viewMatrix, xi2, yi2, zi2).color(R, G, B, 1.0f);
-            buffer.vertex(viewMatrix, xi3, yi3, zi3).color(R, G, B, 1.0f);
+            drawBeam(tessellator, viewMatrix, camPos, debrisCenter, direction, distance, angle);
         }
-
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
 
         RenderSystem.enableCull();
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
+    }
+
+    private static void drawBeam(Tessellator tessellator, Matrix4f viewMatrix,
+                                  Vec3d camPos, Vec3d origin, Vec3d direction,
+                                  double length, float angle) {
+        float ox = (float)(origin.x - camPos.x);
+        float oy = (float)(origin.y - camPos.y);
+        float oz = (float)(origin.z - camPos.z);
+
+        float dx = (float) direction.x;
+        float dy = (float) direction.y;
+        float dz = (float) direction.z;
+
+        Vec3d up = Math.abs(dy) < 0.9 ? new Vec3d(0, 1, 0) : new Vec3d(1, 0, 0);
+        Vec3d right = direction.crossProduct(up).normalize();
+        Vec3d upPerp = direction.crossProduct(right).normalize();
+
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        double angleOffset = Math.toRadians(angle);
+
+        for (int i = 0; i < BEAM_SIDES; i++) {
+            double a1 = angleOffset + (2 * Math.PI * i / BEAM_SIDES);
+            double a2 = angleOffset + (2 * Math.PI * (i + 1) / BEAM_SIDES);
+
+            float rx1 = (float)(Math.cos(a1) * BEAM_RADIUS);
+            float ry1 = (float)(Math.sin(a1) * BEAM_RADIUS);
+            float rx2 = (float)(Math.cos(a2) * BEAM_RADIUS);
+            float ry2 = (float)(Math.sin(a2) * BEAM_RADIUS);
+
+            // Base au débris — opaque
+            float bx1 = ox + (float)(right.x * rx1 + upPerp.x * ry1);
+            float by1 = oy + (float)(right.y * rx1 + upPerp.y * ry1);
+            float bz1 = oz + (float)(right.z * rx1 + upPerp.z * ry1);
+            float bx2 = ox + (float)(right.x * rx2 + upPerp.x * ry2);
+            float by2 = oy + (float)(right.y * rx2 + upPerp.y * ry2);
+            float bz2 = oz + (float)(right.z * rx2 + upPerp.z * ry2);
+
+            // Pointe vers le joueur — transparent
+            float px1 = ox + (float)(dx * length + right.x * rx1 + upPerp.x * ry1);
+            float py1 = oy + (float)(dy * length + right.y * rx1 + upPerp.y * ry1);
+            float pz1 = oz + (float)(dz * length + right.z * rx1 + upPerp.z * ry1);
+            float px2 = ox + (float)(dx * length + right.x * rx2 + upPerp.x * ry2);
+            float py2 = oy + (float)(dy * length + right.y * rx2 + upPerp.y * ry2);
+            float pz2 = oz + (float)(dz * length + right.z * rx2 + upPerp.z * ry2);
+
+            buffer.vertex(viewMatrix, bx1, by1, bz1).color(R, G, B, A);
+            buffer.vertex(viewMatrix, bx2, by2, bz2).color(R, G, B, A);
+            buffer.vertex(viewMatrix, px2, py2, pz2).color(R, G, B, 0f);
+            buffer.vertex(viewMatrix, px1, py1, pz1).color(R, G, B, 0f);
+        }
+
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
     }
 
     private static List<BlockPos> findDebris(World world, BlockPos center) {
