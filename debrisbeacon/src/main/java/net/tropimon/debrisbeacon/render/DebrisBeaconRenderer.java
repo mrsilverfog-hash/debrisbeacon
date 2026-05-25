@@ -24,7 +24,7 @@ public class DebrisBeaconRenderer {
     private static final float A = 0.9f;
 
     // Rayon du cylindre du faisceau
-    private static final float BEAM_RADIUS = 0.08f;
+    private static final float BEAM_RADIUS = 0.03f;
     private static final int BEAM_SIDES = 6;
 
     private static final int SEARCH_RADIUS = 64;
