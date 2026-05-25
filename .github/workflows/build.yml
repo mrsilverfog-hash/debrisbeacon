@@ -1,0 +1,34 @@
+name: Build DebrisBeacon
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Télécharger le code
+        uses: actions/checkout@v4
+
+      - name: Installer Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.8'
+
+      - name: Compiler le mod
+        working-directory: debrisbeacon
+        run: gradle build
+
+      - name: Publier le .jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: debrisbeacon-jar
+          path: debrisbeacon/build/libs/debrisbeacon-*.jar
