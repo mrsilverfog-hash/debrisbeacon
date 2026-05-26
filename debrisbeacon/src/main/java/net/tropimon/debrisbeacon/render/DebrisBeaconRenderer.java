@@ -22,7 +22,7 @@ public class DebrisBeaconRenderer {
     private static final float A = 1.0f;
 
     // Très fin : 0.02 bloc de rayon
-    private static final float BEAM_RADIUS = 0.05f;
+    private static final float BEAM_RADIUS = 0.12f;
     private static final int BEAM_SIDES = 4;
 
     private static final int SEARCH_RADIUS = 64;
@@ -129,8 +129,8 @@ public class DebrisBeaconRenderer {
 
             buffer.vertex(viewMatrix, bx1, by1, bz1).color(R, G, B, A);
             buffer.vertex(viewMatrix, bx2, by2, bz2).color(R, G, B, A);
-            buffer.vertex(viewMatrix, px2, py2, pz2).color(R, G, B, 0f);
-            buffer.vertex(viewMatrix, px1, py1, pz1).color(R, G, B, 0f);
+            buffer.vertex(viewMatrix, px2, py2, pz2).color(R, G, B, A);
+            buffer.vertex(viewMatrix, px1, py1, pz1).color(R, G, B, A);
         }
 
         BufferRenderer.drawWithGlobalProgram(buffer.end());
