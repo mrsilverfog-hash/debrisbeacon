@@ -19,16 +19,11 @@ public class DebrisBeaconRenderer {
     private static final float R = 1.0f;
     private static final float G = 0.55f;
     private static final float B = 0.0f;
-    private static final float A = 0.95f;
-
-    private static final float BEAM_RADIUS = 0.08f;
-    private static final int BEAM_SIDES = 6;
-
-    // Le laser dépasse de 5 blocs au-delà du joueur pour être visible dans son dos
-    private static final float OVERSHOOT = 5.0f;
+    private static final float A = 1.0f;
 
     private static final int SEARCH_RADIUS = 64;
     private static final int SCAN_INTERVAL = 40;
+    private static final float OVERSHOOT = 5.0f;
 
     private static List<BlockPos> cachedBlocks = new ArrayList<>();
     private static long lastScanTick = -1;
@@ -62,9 +57,6 @@ public class DebrisBeaconRenderer {
         Vec3d camPos = camera.getPos();
         Vec3d playerEyes = client.player.getEyePos();
 
-        float tickDelta = context.tickCounter().getTickDelta(true);
-        float angle = ((currentTick % 360) + tickDelta) * 3.0f;
-
         Matrix4f viewMatrix = context.matrixStack().peek().getPositionMatrix();
 
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
@@ -72,77 +64,37 @@ public class DebrisBeaconRenderer {
         RenderSystem.defaultBlendFunc();
         RenderSystem.depthMask(false);
         RenderSystem.disableCull();
-        // Visible à travers tous les blocs
         RenderSystem.disableDepthTest();
+        RenderSystem.lineWidth(2.0f);
 
         Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         for (BlockPos pos : cachedBlocks) {
             Vec3d debrisCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
             Vec3d direction = playerEyes.subtract(debrisCenter).normalize();
-            // Distance totale = jusqu'au joueur + dépassement
             double distance = debrisCenter.distanceTo(playerEyes) + OVERSHOOT;
 
-            drawBeam(tessellator, viewMatrix, camPos, debrisCenter, direction, distance, angle);
+            // Point de départ : centre du débris
+            float sx = (float)(debrisCenter.x - camPos.x);
+            float sy = (float)(debrisCenter.y - camPos.y);
+            float sz = (float)(debrisCenter.z - camPos.z);
+
+            // Point d'arrivée : au-delà du joueur
+            float ex = (float)(debrisCenter.x - camPos.x + direction.x * distance);
+            float ey = (float)(debrisCenter.y - camPos.y + direction.y * distance);
+            float ez = (float)(debrisCenter.z - camPos.z + direction.z * distance);
+
+            buffer.vertex(viewMatrix, sx, sy, sz).color(R, G, B, A);
+            buffer.vertex(viewMatrix, ex, ey, ez).color(R, G, B, A);
         }
+
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
 
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
-    }
-
-    private static void drawBeam(Tessellator tessellator, Matrix4f viewMatrix,
-                                  Vec3d camPos, Vec3d origin, Vec3d direction,
-                                  double length, float angle) {
-        float ox = (float)(origin.x - camPos.x);
-        float oy = (float)(origin.y - camPos.y);
-        float oz = (float)(origin.z - camPos.z);
-
-        float dx = (float) direction.x;
-        float dy = (float) direction.y;
-        float dz = (float) direction.z;
-
-        Vec3d up = Math.abs(dy) < 0.9 ? new Vec3d(0, 1, 0) : new Vec3d(1, 0, 0);
-        Vec3d right = direction.crossProduct(up).normalize();
-        Vec3d upPerp = direction.crossProduct(right).normalize();
-
-        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        double angleOffset = Math.toRadians(angle);
-
-        for (int i = 0; i < BEAM_SIDES; i++) {
-            double a1 = angleOffset + (2 * Math.PI * i / BEAM_SIDES);
-            double a2 = angleOffset + (2 * Math.PI * (i + 1) / BEAM_SIDES);
-
-            float rx1 = (float)(Math.cos(a1) * BEAM_RADIUS);
-            float ry1 = (float)(Math.sin(a1) * BEAM_RADIUS);
-            float rx2 = (float)(Math.cos(a2) * BEAM_RADIUS);
-            float ry2 = (float)(Math.sin(a2) * BEAM_RADIUS);
-
-            // Base au débris
-            float bx1 = ox + (float)(right.x * rx1 + upPerp.x * ry1);
-            float by1 = oy + (float)(right.y * rx1 + upPerp.y * ry1);
-            float bz1 = oz + (float)(right.z * rx1 + upPerp.z * ry1);
-            float bx2 = ox + (float)(right.x * rx2 + upPerp.x * ry2);
-            float by2 = oy + (float)(right.y * rx2 + upPerp.y * ry2);
-            float bz2 = oz + (float)(right.z * rx2 + upPerp.z * ry2);
-
-            // Bout du laser (au-delà du joueur)
-            float px1 = ox + (float)(dx * length + right.x * rx1 + upPerp.x * ry1);
-            float py1 = oy + (float)(dy * length + right.y * rx1 + upPerp.y * ry1);
-            float pz1 = oz + (float)(dz * length + right.z * rx1 + upPerp.z * ry1);
-            float px2 = ox + (float)(dx * length + right.x * rx2 + upPerp.x * ry2);
-            float py2 = oy + (float)(dy * length + right.y * rx2 + upPerp.y * ry2);
-            float pz2 = oz + (float)(dz * length + right.z * rx2 + upPerp.z * ry2);
-
-            // Opaque au débris, transparent au bout
-            buffer.vertex(viewMatrix, bx1, by1, bz1).color(R, G, B, A);
-            buffer.vertex(viewMatrix, bx2, by2, bz2).color(R, G, B, A);
-            buffer.vertex(viewMatrix, px2, py2, pz2).color(R, G, B, A);
-            buffer.vertex(viewMatrix, px1, py1, pz1).color(R, G, B, A);
-        }
-
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
     }
 
     private static List<BlockPos> findDebris(World world, BlockPos center) {
