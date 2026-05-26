@@ -26,7 +26,7 @@ public class DebrisBeaconRenderer {
     private static final int BEAM_SIDES = 4;
 
     private static final int SEARCH_RADIUS = 64;
-    private static final int SCAN_INTERVAL = 100;
+    private static final int SCAN_INTERVAL = 40;
 
     private static List<BlockPos> cachedBlocks = new ArrayList<>();
     private static long lastScanTick = -1;
