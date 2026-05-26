@@ -4,7 +4,9 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.*;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -23,10 +25,10 @@ public class DebrisBeaconRenderer {
 
     private static final int SEARCH_RADIUS = 64;
     private static final int SCAN_INTERVAL = 40;
-    private static final float OVERSHOOT = 5.0f;
 
     private static List<BlockPos> cachedBlocks = new ArrayList<>();
     private static long lastScanTick = -1;
+    private static BlockPos lastCenter = null; // Pour détecter le changement de serveur/dimension
 
     public static int getDebrisCount() {
         return cachedBlocks.size();
@@ -35,6 +37,7 @@ public class DebrisBeaconRenderer {
     public static void resetCache() {
         cachedBlocks = new ArrayList<>();
         lastScanTick = -1;
+        lastCenter = null;
     }
 
     public static void onWorldRenderLast(WorldRenderContext context) {
@@ -45,10 +48,17 @@ public class DebrisBeaconRenderer {
         if (world == null || client.player == null) return;
 
         long currentTick = world.getTime();
+        BlockPos currentCenter = client.player.getBlockPos();
+
+        // Forcer un rescan si on a changé de dimension ou si la position a beaucoup changé
+        if (lastCenter == null || currentCenter.getManhattanDistance(lastCenter) > SEARCH_RADIUS) {
+            lastScanTick = -1;
+        }
 
         if (currentTick - lastScanTick >= SCAN_INTERVAL) {
-            cachedBlocks = findDebris(world, client.player.getBlockPos());
+            cachedBlocks = findDebris(world, currentCenter);
             lastScanTick = currentTick;
+            lastCenter = currentCenter;
         }
 
         if (cachedBlocks.isEmpty()) return;
@@ -59,6 +69,7 @@ public class DebrisBeaconRenderer {
 
         Matrix4f viewMatrix = context.matrixStack().peek().getPositionMatrix();
 
+        // --- Lignes ---
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -73,14 +84,13 @@ public class DebrisBeaconRenderer {
         for (BlockPos pos : cachedBlocks) {
             Vec3d debrisCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
             Vec3d direction = playerEyes.subtract(debrisCenter).normalize();
-            double distance = debrisCenter.distanceTo(playerEyes) + OVERSHOOT;
+            // Le laser s'arrête 1 bloc avant les yeux du joueur (ne le traverse pas)
+            double distance = Math.max(0, debrisCenter.distanceTo(playerEyes) - 1.0);
 
-            // Point de départ : centre du débris
             float sx = (float)(debrisCenter.x - camPos.x);
             float sy = (float)(debrisCenter.y - camPos.y);
             float sz = (float)(debrisCenter.z - camPos.z);
 
-            // Point d'arrivée : au-delà du joueur
             float ex = (float)(debrisCenter.x - camPos.x + direction.x * distance);
             float ey = (float)(debrisCenter.y - camPos.y + direction.y * distance);
             float ez = (float)(debrisCenter.z - camPos.z + direction.z * distance);
@@ -90,6 +100,37 @@ public class DebrisBeaconRenderer {
         }
 
         BufferRenderer.drawWithGlobalProgram(buffer.end());
+
+        // --- Texte flottant avec la distance ---
+        TextRenderer textRenderer = client.textRenderer;
+        MatrixStack matrices = context.matrixStack();
+
+        for (BlockPos pos : cachedBlocks) {
+            Vec3d debrisCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            double dist = debrisCenter.distanceTo(playerEyes);
+            String label = (int) dist + "m";
+
+            double dx = debrisCenter.x - camPos.x;
+            double dy = debrisCenter.y - camPos.y;
+            double dz = debrisCenter.z - camPos.z;
+
+            matrices.push();
+            matrices.translate(dx, dy + 0.6, dz);
+            matrices.multiply(camera.getRotation());
+            matrices.scale(-0.025f, -0.025f, -0.025f);
+
+            Matrix4f textMatrix = matrices.peek().getPositionMatrix();
+            int textWidth = textRenderer.getWidth(label);
+
+            RenderSystem.enableDepthTest();
+            textRenderer.draw(label, -textWidth / 2f, 0, 0xFFAA44, false,
+                textMatrix, client.getBufferBuilders().getEntityVertexConsumers(),
+                TextRenderer.TextLayerType.SEE_THROUGH, 0, 0xF000F0);
+            client.getBufferBuilders().getEntityVertexConsumers().draw();
+            RenderSystem.disableDepthTest();
+
+            matrices.pop();
+        }
 
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
