@@ -15,6 +15,7 @@ import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.List;
 
 public class DebrisBeaconRenderer {
 
@@ -29,6 +30,10 @@ public class DebrisBeaconRenderer {
     private static List<BlockPos> cachedBlocks = new ArrayList<>();
     private static long lastScanTick = -1;
     private static BlockPos lastCenter = null; // Pour détecter le changement de serveur/dimension
+
+    public static List<BlockPos> getCachedBlocks() {
+        return cachedBlocks;
+    }
 
     public static int getDebrisCount() {
         return cachedBlocks.size();
