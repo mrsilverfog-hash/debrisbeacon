@@ -112,20 +112,19 @@ public class DebrisBeaconRenderer {
             double dist = debrisCenter.distanceTo(playerEyes);
             String label = (int) dist + "m";
 
-            // Position au milieu entre le débris et le joueur
-            Vec3d mid = debrisCenter.add(playerEyes).multiply(0.5);
+            // Position à 3 blocs devant le joueur sur la direction du laser
+            Vec3d direction2 = debrisCenter.subtract(playerEyes).normalize();
+            Vec3d labelPos = playerEyes.add(direction2.multiply(1.5));
 
-            double dx = mid.x - camPos.x;
-            double dy = mid.y - camPos.y;
-            double dz = mid.z - camPos.z;
+            double dx = labelPos.x - camPos.x;
+            double dy = labelPos.y - camPos.y;
+            double dz = labelPos.z - camPos.z;
 
             matrices.push();
             matrices.translate(dx, dy, dz);
             matrices.multiply(camera.getRotation());
-            // Scale selon la distance pour rester lisible de loin
-            float scale = (float)(dist * 0.015);
-            scale = Math.max(0.02f, Math.min(scale, 0.08f));
-            matrices.scale(-scale, -scale, -scale);
+            float scale = 0.08f;
+            matrices.scale(scale, -scale, scale);
 
             Matrix4f textMatrix = matrices.peek().getPositionMatrix();
             int textWidth = textRenderer.getWidth(label);
