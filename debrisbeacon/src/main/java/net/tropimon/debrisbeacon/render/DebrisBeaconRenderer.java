@@ -15,7 +15,6 @@ import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.List;
 
 public class DebrisBeaconRenderer {
 
@@ -29,7 +28,7 @@ public class DebrisBeaconRenderer {
 
     private static List<BlockPos> cachedBlocks = new ArrayList<>();
     private static long lastScanTick = -1;
-    private static BlockPos lastCenter = null; // Pour détecter le changement de serveur/dimension
+    private static BlockPos lastCenter = null;
 
     public static List<BlockPos> getCachedBlocks() {
         return cachedBlocks;
@@ -55,7 +54,6 @@ public class DebrisBeaconRenderer {
         long currentTick = world.getTime();
         BlockPos currentCenter = client.player.getBlockPos();
 
-        // Forcer un rescan si on a changé de dimension ou si la position a beaucoup changé
         if (lastCenter == null || currentCenter.getManhattanDistance(lastCenter) > SEARCH_RADIUS) {
             lastScanTick = -1;
         }
@@ -89,7 +87,6 @@ public class DebrisBeaconRenderer {
         for (BlockPos pos : cachedBlocks) {
             Vec3d debrisCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
             Vec3d direction = playerEyes.subtract(debrisCenter).normalize();
-            // Le laser s'arrête 1 bloc avant les yeux du joueur (ne le traverse pas)
             double distance = Math.max(0, debrisCenter.distanceTo(playerEyes) - 1.0);
 
             float sx = (float)(debrisCenter.x - camPos.x);
@@ -106,7 +103,7 @@ public class DebrisBeaconRenderer {
 
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
-        // --- Texte flottant avec la distance ---
+        // --- Texte flottant au milieu du laser, visible à travers les blocs ---
         TextRenderer textRenderer = client.textRenderer;
         MatrixStack matrices = context.matrixStack();
 
@@ -115,24 +112,29 @@ public class DebrisBeaconRenderer {
             double dist = debrisCenter.distanceTo(playerEyes);
             String label = (int) dist + "m";
 
-            double dx = debrisCenter.x - camPos.x;
-            double dy = debrisCenter.y - camPos.y;
-            double dz = debrisCenter.z - camPos.z;
+            // Position au milieu entre le débris et le joueur
+            Vec3d mid = debrisCenter.add(playerEyes).multiply(0.5);
+
+            double dx = mid.x - camPos.x;
+            double dy = mid.y - camPos.y;
+            double dz = mid.z - camPos.z;
 
             matrices.push();
-            matrices.translate(dx, dy + 0.6, dz);
+            matrices.translate(dx, dy, dz);
             matrices.multiply(camera.getRotation());
-            matrices.scale(-0.025f, -0.025f, -0.025f);
+            // Scale selon la distance pour rester lisible de loin
+            float scale = (float)(dist * 0.015);
+            scale = Math.max(0.02f, Math.min(scale, 0.08f));
+            matrices.scale(-scale, -scale, -scale);
 
             Matrix4f textMatrix = matrices.peek().getPositionMatrix();
             int textWidth = textRenderer.getWidth(label);
 
-            RenderSystem.enableDepthTest();
-            textRenderer.draw(label, -textWidth / 2f, 0, 0xFFAA44, false,
+            // SEE_THROUGH = visible à travers les blocs
+            textRenderer.draw(label, -textWidth / 2f, 0, 0xFFAA00, false,
                 textMatrix, client.getBufferBuilders().getEntityVertexConsumers(),
                 TextRenderer.TextLayerType.SEE_THROUGH, 0, 0xF000F0);
             client.getBufferBuilders().getEntityVertexConsumers().draw();
-            RenderSystem.disableDepthTest();
 
             matrices.pop();
         }
