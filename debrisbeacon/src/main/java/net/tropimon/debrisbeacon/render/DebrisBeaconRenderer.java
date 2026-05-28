@@ -123,7 +123,7 @@ public class DebrisBeaconRenderer {
             matrices.push();
             matrices.translate(dx, dy, dz);
             matrices.multiply(camera.getRotation());
-            float scale = 0.08f;
+            float scale = 0.008f;
             matrices.scale(scale, -scale, scale);
 
             Matrix4f textMatrix = matrices.peek().getPositionMatrix();
