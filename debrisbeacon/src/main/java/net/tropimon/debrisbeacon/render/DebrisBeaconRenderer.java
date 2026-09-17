@@ -2,11 +2,14 @@ package net.tropimon.debrisbeacon.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -25,6 +28,10 @@ public class DebrisBeaconRenderer {
 
     private static final int SEARCH_RADIUS = 64;
     private static final int SCAN_INTERVAL = 40;
+
+    // Bloc recherché hors Nether (Tropimon / Cobblemon)
+    private static final Identifier CRYSTAL_CORE_ID =
+        Identifier.of("cobblemon", "deepslate_crystal_core");
 
     private static List<BlockPos> cachedBlocks = new ArrayList<>();
     private static long lastScanTick = -1;
@@ -59,7 +66,7 @@ public class DebrisBeaconRenderer {
         }
 
         if (currentTick - lastScanTick >= SCAN_INTERVAL) {
-            cachedBlocks = findDebris(world, currentCenter);
+            cachedBlocks = findTargets(world, currentCenter);
             lastScanTick = currentTick;
             lastCenter = currentCenter;
         }
@@ -144,13 +151,30 @@ public class DebrisBeaconRenderer {
         RenderSystem.disableBlend();
     }
 
-    private static List<BlockPos> findDebris(World world, BlockPos center) {
+    /**
+     * Retourne le bloc à chercher selon la dimension :
+     * - Nether  -> Ancient Debris (comportement d'origine, inchangé)
+     * - ailleurs -> cobblemon:deepslate_crystal_core
+     * Renvoie null si le bloc Cobblemon n'est pas présent dans le registre.
+     */
+    private static Block getTargetBlock(World world) {
+        if (world.getRegistryKey() == World.NETHER) {
+            return Blocks.ANCIENT_DEBRIS;
+        }
+        Block block = Registries.BLOCK.get(CRYSTAL_CORE_ID);
+        return block == Blocks.AIR ? null : block;
+    }
+
+    private static List<BlockPos> findTargets(World world, BlockPos center) {
         List<BlockPos> result = new ArrayList<>();
+        Block target = getTargetBlock(world);
+        if (target == null) return result;
+
         BlockPos.iterate(
             center.add(-SEARCH_RADIUS, -SEARCH_RADIUS, -SEARCH_RADIUS),
             center.add(SEARCH_RADIUS,  SEARCH_RADIUS,  SEARCH_RADIUS)
         ).forEach(pos -> {
-            if (world.getBlockState(pos).getBlock() == Blocks.ANCIENT_DEBRIS) {
+            if (world.getBlockState(pos).getBlock() == target) {
                 result.add(pos.toImmutable());
             }
         });
