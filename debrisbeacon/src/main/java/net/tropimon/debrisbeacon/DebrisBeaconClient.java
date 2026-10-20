@@ -39,6 +39,7 @@ public class DebrisBeaconClient implements ClientModInitializer {
                 message = enabled ? "§aDebrisBeacon : Activé" : "§cDebrisBeacon : Désactivé";
                 messageExpireTime = System.currentTimeMillis() + MESSAGE_DURATION_MS;
             }
+            DebrisBeaconRenderer.tick(client);
         });
 
         WorldRenderEvents.LAST.register(DebrisBeaconRenderer::onWorldRenderLast);

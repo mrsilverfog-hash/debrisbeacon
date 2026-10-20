@@ -13,6 +13,8 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.minecraft.world.chunk.ChunkSection;
+import net.minecraft.world.chunk.WorldChunk;
 import net.tropimon.debrisbeacon.DebrisBeaconClient;
 import org.joml.Matrix4f;
 
@@ -32,8 +34,14 @@ public class DebrisBeaconRenderer {
     private static final float HAB_B = 1.0f;
     private static final int BEAM_HEIGHT = 256;
 
-    private static final int SEARCH_RADIUS = 64;
-    private static final int SCAN_INTERVAL = 40;
+    // Scan par sections de chunk (16x16x16), réparti sur plusieurs ticks et fait hors du rendu :
+    // une section dont la palette ne contient aucun bloc recherché est sautée d'un coup.
+    // Portée horizontale : 6 chunks = 96 blocs ; verticale : toute la hauteur du monde.
+    private static final int SCAN_RADIUS_CHUNKS = 6;
+    private static final int SECTION_BUDGET_PER_TICK = 1500;
+    private static final int BLOCK_BUDGET_PER_TICK = 40000;
+    // Pause minimale entre deux passes complètes (en ticks)
+    private static final int MIN_TICKS_BETWEEN_PASSES = 20;
 
     // Détection des crystal cores dans l'overworld : ACTIVÉE.
     // Pour la désactiver, il suffit de passer cette valeur à false.
@@ -47,10 +55,21 @@ public class DebrisBeaconRenderer {
     private static final Identifier HABITAT_ID =
         Identifier.of("cobblemon", "habitat_block");
 
-    private static List<BlockPos> cachedBlocks = new ArrayList<>();
-    private static List<BlockPos> cachedHabitats = new ArrayList<>();
-    private static long lastScanTick = -1;
-    private static BlockPos lastCenter = null;
+    private static volatile List<BlockPos> cachedBlocks = new ArrayList<>();
+    private static volatile List<BlockPos> cachedHabitats = new ArrayList<>();
+
+    // État de la passe de scan en cours
+    private static boolean scanning = false;
+    private static int[] scanChunkXs = new int[0];
+    private static int[] scanChunkZs = new int[0];
+    private static int scanChunkIdx = 0;
+    private static int scanSectionIdx = 0;
+    private static List<BlockPos> pendingTargets = new ArrayList<>();
+    private static List<BlockPos> pendingHabitats = new ArrayList<>();
+    private static Block passTarget = null;
+    private static Block passHabitat = null;
+    private static int ticksSincePass = MIN_TICKS_BETWEEN_PASSES;
+    private static World lastWorld = null;
 
     public static List<BlockPos> getCachedBlocks() {
         return cachedBlocks;
@@ -63,8 +82,8 @@ public class DebrisBeaconRenderer {
     public static void resetCache() {
         cachedBlocks = new ArrayList<>();
         cachedHabitats = new ArrayList<>();
-        lastScanTick = -1;
-        lastCenter = null;
+        scanning = false;
+        ticksSincePass = MIN_TICKS_BETWEEN_PASSES;
     }
 
     public static void onWorldRenderLast(WorldRenderContext context) {
@@ -74,19 +93,7 @@ public class DebrisBeaconRenderer {
         World world = client.world;
         if (world == null || client.player == null) return;
 
-        long currentTick = world.getTime();
-        BlockPos currentCenter = client.player.getBlockPos();
-
-        if (lastCenter == null || currentCenter.getManhattanDistance(lastCenter) > SEARCH_RADIUS) {
-            lastScanTick = -1;
-        }
-
-        if (currentTick - lastScanTick >= SCAN_INTERVAL) {
-            scan(world, currentCenter);
-            lastScanTick = currentTick;
-            lastCenter = currentCenter;
-        }
-
+        // Le scan tourne dans tick(), plus jamais pendant le rendu
         // Faisceaux violets des habitats (indépendants des débris)
         renderHabitats(context, world);
 
@@ -268,28 +275,114 @@ public class DebrisBeaconRenderer {
         return block == Blocks.AIR ? null : block;
     }
 
-    // Un seul passage sur la zone pour trouver à la fois les débris/cristaux et les habitats
-    private static void scan(World world, BlockPos center) {
-        List<BlockPos> targets = new ArrayList<>();
-        List<BlockPos> habitats = new ArrayList<>();
-        Block target = getTargetBlock(world);
-        Block habitat = getHabitatBlock();
+    // ===================== SCAN PAR SECTIONS (appelé à chaque tick client) =====================
 
-        if (target != null || habitat != null) {
-            BlockPos.iterate(
-                center.add(-SEARCH_RADIUS, -SEARCH_RADIUS, -SEARCH_RADIUS),
-                center.add(SEARCH_RADIUS,  SEARCH_RADIUS,  SEARCH_RADIUS)
-            ).forEach(pos -> {
-                Block block = world.getBlockState(pos).getBlock();
-                if (target != null && block == target) {
-                    targets.add(pos.toImmutable());
-                } else if (habitat != null && block == habitat) {
-                    habitats.add(pos.toImmutable());
-                }
-            });
+    public static void tick(MinecraftClient client) {
+        if (!DebrisBeaconClient.enabled) return;
+        World world = client.world;
+        if (world == null || client.player == null) return;
+
+        if (world != lastWorld) {
+            lastWorld = world;
+            resetCache();
         }
 
-        cachedBlocks = targets;
-        cachedHabitats = habitats;
+        if (!scanning) {
+            if (++ticksSincePass < MIN_TICKS_BETWEEN_PASSES) return;
+            startPass(client, world);
+            if (!scanning) return;
+        }
+
+        int sections = 0;
+        int blocks = 0;
+        while (scanning && sections < SECTION_BUDGET_PER_TICK && blocks < BLOCK_BUDGET_PER_TICK) {
+            if (scanChunkIdx >= scanChunkXs.length) {
+                cachedBlocks = pendingTargets;
+                cachedHabitats = pendingHabitats;
+                scanning = false;
+                ticksSincePass = 0;
+                break;
+            }
+
+            int cx = scanChunkXs[scanChunkIdx];
+            int cz = scanChunkZs[scanChunkIdx];
+            WorldChunk chunk = world.getChunkManager().getWorldChunk(cx, cz);
+            if (chunk == null) {
+                scanChunkIdx++;
+                scanSectionIdx = 0;
+                continue;
+            }
+
+            ChunkSection[] secs = chunk.getSectionArray();
+            if (scanSectionIdx >= secs.length) {
+                scanChunkIdx++;
+                scanSectionIdx = 0;
+                continue;
+            }
+
+            int si = scanSectionIdx++;
+            sections++;
+            ChunkSection sec = secs[si];
+            if (sec == null || sec.isEmpty()) continue;
+
+            final Block t = passTarget;
+            final Block h = passHabitat;
+            if (!sec.getBlockStateContainer().hasAny(st -> {
+                Block b = st.getBlock();
+                return (t != null && b == t) || (h != null && b == h);
+            })) continue;
+
+            int baseX = cx << 4;
+            int baseY = chunk.sectionIndexToCoord(si) << 4;
+            int baseZ = cz << 4;
+            for (int y = 0; y < 16; y++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        Block b = sec.getBlockState(x, y, z).getBlock();
+                        if (t != null && b == t) {
+                            pendingTargets.add(new BlockPos(baseX + x, baseY + y, baseZ + z));
+                        } else if (h != null && b == h) {
+                            pendingHabitats.add(new BlockPos(baseX + x, baseY + y, baseZ + z));
+                        }
+                    }
+                }
+            }
+            blocks += 4096;
+        }
+    }
+
+    /** Prépare une passe : chunks dans le rayon, du plus proche au plus lointain. */
+    private static void startPass(MinecraftClient client, World world) {
+        passTarget = getTargetBlock(world);
+        passHabitat = getHabitatBlock();
+        if (passTarget == null && passHabitat == null) {
+            cachedBlocks = new ArrayList<>();
+            cachedHabitats = new ArrayList<>();
+            ticksSincePass = 0;
+            return;
+        }
+
+        int pcx = client.player.getBlockX() >> 4;
+        int pcz = client.player.getBlockZ() >> 4;
+        int r = SCAN_RADIUS_CHUNKS;
+        List<int[]> chunks = new ArrayList<>();
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                if (dx * dx + dz * dz > r * r) continue;
+                chunks.add(new int[]{pcx + dx, pcz + dz, dx * dx + dz * dz});
+            }
+        }
+        chunks.sort((p, q) -> Integer.compare(p[2], q[2]));
+        scanChunkXs = new int[chunks.size()];
+        scanChunkZs = new int[chunks.size()];
+        for (int i = 0; i < chunks.size(); i++) {
+            scanChunkXs[i] = chunks.get(i)[0];
+            scanChunkZs[i] = chunks.get(i)[1];
+        }
+        scanChunkIdx = 0;
+        scanSectionIdx = 0;
+        pendingTargets = new ArrayList<>();
+        pendingHabitats = new ArrayList<>();
+        scanning = true;
     }
 }
