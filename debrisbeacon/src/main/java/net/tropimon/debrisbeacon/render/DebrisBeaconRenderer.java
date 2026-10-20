@@ -35,9 +35,9 @@ public class DebrisBeaconRenderer {
     private static final int SEARCH_RADIUS = 64;
     private static final int SCAN_INTERVAL = 40;
 
-    // Détection des crystal cores dans l'overworld : DÉSACTIVÉE.
-    // Pour la réactiver un jour, il suffit de passer cette valeur à true.
-    private static final boolean CRYSTAL_CORE_ENABLED = false;
+    // Détection des crystal cores dans l'overworld : ACTIVÉE.
+    // Pour la désactiver, il suffit de passer cette valeur à false.
+    private static final boolean CRYSTAL_CORE_ENABLED = true;
 
     // Bloc recherché hors Nether (Tropimon / Cobblemon)
     private static final Identifier CRYSTAL_CORE_ID =
