@@ -139,6 +139,9 @@ public class DebrisBeaconRenderer {
         // --- Texte flottant au milieu du laser, visible à travers les blocs ---
         TextRenderer textRenderer = client.textRenderer;
         MatrixStack matrices = context.matrixStack();
+        // Toutes les étiquettes sont empilées dans le même tampon puis envoyées en une seule fois
+        // (avant : un envoi à la carte graphique par étiquette). Affichage identique.
+        VertexConsumerProvider.Immediate labelConsumers = client.getBufferBuilders().getEntityVertexConsumers();
 
         for (BlockPos pos : cachedBlocks) {
             Vec3d debrisCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
@@ -164,12 +167,12 @@ public class DebrisBeaconRenderer {
 
             // SEE_THROUGH = visible à travers les blocs
             textRenderer.draw(label, -textWidth / 2f, 0, 0xFFAA00, false,
-                textMatrix, client.getBufferBuilders().getEntityVertexConsumers(),
+                textMatrix, labelConsumers,
                 TextRenderer.TextLayerType.SEE_THROUGH, 0, 0xF000F0);
-            client.getBufferBuilders().getEntityVertexConsumers().draw();
 
             matrices.pop();
         }
+        labelConsumers.draw();
 
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
