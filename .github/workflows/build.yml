@@ -4,6 +4,9 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,4 +34,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debrisbeacon-jar
-          path: debrisbeacon/build/libs/debrisbeacon-*.jar
+          path: |
+            debrisbeacon/build/libs/*.jar
+            !debrisbeacon/build/libs/*-sources.jar
+
+      - name: Publier le .jar en téléchargement direct (Release "latest")
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          JAR=$(ls debrisbeacon/build/libs/*.jar | grep -v -- '-sources' | head -1)
+          echo "Jar publié : $JAR"
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest "$JAR" --title "Dernière version" --notes "Compilé automatiquement depuis le commit ${GITHUB_SHA::7}." --latest
