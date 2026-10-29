@@ -30,6 +30,13 @@ jobs:
         working-directory: debrisbeacon
         run: gradle build
 
+      - name: Publier le .jar dans Actions (sans zip)
+        uses: actions/upload-artifact@v7
+        with:
+          path: debrisbeacon/build/libs/debrisbeacon-1.0.0.jar
+          archive: false
+          if-no-files-found: error
+
       - name: Publier le .jar en téléchargement direct (Release "latest")
         if: success()
         env:
